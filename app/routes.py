@@ -1,77 +1,84 @@
 from flask import Blueprint, request, jsonify, abort
-from . import db
-from .models import Task
+from marshmallow import ValidationError
 
-bp = Blueprint('tasks', __name__, url_prefix='/tasks')
+from app import db
+from app.models import Task
+from app.schemas.task import TaskSchema
+from datetime import datetime
 
-@bp.route('/', methods=['POST'])
+bp = Blueprint('tasks', __name__)
+
+task_schema = TaskSchema()
+tasks_schema = TaskSchema(many=True)
+
+
+# Создание задачи
+@bp.route('/tasks', methods=['POST'])
 def create_task():
-    data = request.get_json()
-    title = data.get('title')
-    description = data.get('description', '')
+    json_data = request.get_json()
+    if not json_data:
+        return jsonify({'message': 'No input data provided'}), 400
 
-    if not title:
-        return jsonify({'error': 'Title is required'}), 400
+    # Валидация данных
+    try:
+        data = task_schema.load(json_data)
+    except ValidationError as err:
+        return jsonify(err.messages), 422
 
-    task = Task(title=title, description=description)
+    task = Task(title=data['title'], description=data.get('description', ''))
     db.session.add(task)
     db.session.commit()
 
-    return jsonify({
-        'id': task.id,
-        'title': task.title,
-        'description': task.description,
-        'created_at': task.created_at,
-        'updated_at': task.updated_at
-    }), 201
+    result = task_schema.dump(task)
+    return jsonify(result), 201
 
-@bp.route('/', methods=['GET'])
+
+# Получение списка задач
+@bp.route('/tasks', methods=['GET'])
 def get_tasks():
     tasks = Task.query.all()
-    return jsonify([{
-        'id': task.id,
-        'title': task.title,
-        'description': task.description,
-        'created_at': task.created_at,
-        'updated_at': task.updated_at
-    } for task in tasks])
+    result = tasks_schema.dump(tasks)
+    return jsonify(result), 200
 
-@bp.route('/<int:id>', methods=['GET'])
+
+# Получение информации о задаче
+@bp.route('/tasks/<int:id>', methods=['GET'])
 def get_task(id):
     task = Task.query.get_or_404(id)
-    return jsonify({
-        'id': task.id,
-        'title': task.title,
-        'description': task.description,
-        'created_at': task.created_at,
-        'updated_at': task.updated_at
-    })
+    result = task_schema.dump(task)
+    return jsonify(result), 200
 
-@bp.route('/<int:id>', methods=['PUT'])
+
+# Обновление задачи
+@bp.route('/tasks/<int:id>', methods=['PUT'])
 def update_task(id):
     task = Task.query.get_or_404(id)
-    data = request.get_json()
-    title = data.get('title')
-    description = data.get('description')
+    json_data = request.get_json()
+    if not json_data:
+        return jsonify({'message': 'No input data provided'}), 400
 
-    if title:
-        task.title = title
-    if description:
-        task.description = description
+    # Валидация данных
+    try:
+        data = task_schema.load(json_data, partial=True)
+    except ValidationError as err:
+        return jsonify(err.messages), 422
+
+    if 'title' in data:
+        task.title = data['title']
+    if 'description' in data:
+        task.description = data['description']
+    task.updated_at = datetime.utcnow()
 
     db.session.commit()
 
-    return jsonify({
-        'id': task.id,
-        'title': task.title,
-        'description': task.description,
-        'created_at': task.created_at,
-        'updated_at': task.updated_at
-    })
+    result = task_schema.dump(task)
+    return jsonify(result), 200
 
-@bp.route('/<int:id>', methods=['DELETE'])
+
+# Удаление задачи
+@bp.route('/tasks/<int:id>', methods=['DELETE'])
 def delete_task(id):
     task = Task.query.get_or_404(id)
     db.session.delete(task)
     db.session.commit()
-    return jsonify({'message': 'Task deleted successfully'})
+    return jsonify({'message': 'Task successfully deleted'}), 200

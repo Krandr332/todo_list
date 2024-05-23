@@ -2,3 +2,5 @@ flask
 flask_sqlalchemy
 flask_migrate
 pymysql
+marshmallow
+marshmallow-sqlalchemy
